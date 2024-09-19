@@ -87,45 +87,50 @@ def redirect_url():
            url_for('index')
 
 
-
 @app.route("/list")
 @login_required
-def lists ():
-    # Display the all Tasks
-	todos_l = todos.find()
-	a1="active"
-	return render_template('index.html',a1=a1,todos=todos_l,t=title,h=heading)
+def lists():
+    # Display the all Tasks for the logged-in user
+    user_id = session['user_id']
+    todos_l = todos.find({"user_id": ObjectId(user_id)})  # Filter tasks by user_id
+    a1 = "active"
+    return render_template('index.html', a1=a1, todos=todos_l, t=title, h=heading)
+
 
 @app.route("/")
 @app.route("/uncompleted")
 @login_required
-def tasks ():
-	#Display the Uncompleted Tasks
-	todos_l = todos.find({"done":"no"})
-	a2="active"
-	return render_template('index.html',a2=a2,todos=todos_l,t=title,h=heading)
+def tasks():
+    # Display the Uncompleted Tasks for the logged-in user
+    user_id = session['user_id']
+    todos_l = todos.find({"done": "no", "user_id": ObjectId(user_id)})  # Filter by user_id
+    a2 = "active"
+    return render_template('index.html', a2=a2, todos=todos_l, t=title, h=heading)
+
 
 @app.route("/completed")
 @login_required
-def completed ():
-	#Display the Completed Tasks
-	todos_l = todos.find({"done":"yes"})
-	a3="active"
-	return render_template('index.html',a3=a3,todos=todos_l,t=title,h=heading)
+def completed():
+    # Display the Completed Tasks for the logged-in user
+    user_id = session['user_id']
+    todos_l = todos.find({"done": "yes", "user_id": ObjectId(user_id)})  # Filter by user_id
+    a3 = "active"
+    return render_template('index.html', a3=a3, todos=todos_l, t=title, h=heading)
 
 @app.route("/done")
 @login_required
-def done ():
-	#Done-or-not ICON
-	id=request.values.get("_id")
-	task=todos.find({"_id":ObjectId(id)})
-	if(task[0]["done"]=="yes"):
-		todos.update_one({"_id":ObjectId(id)}, {"$set": {"done":"no"}})
-	else:
-		todos.update_one({"_id":ObjectId(id)}, {"$set": {"done":"yes"}})
-	redir=redirect_url()
-
-	return redirect(redir)
+def done():
+    # Done-or-not ICON
+    id = request.values.get("_id")
+    user_id = session['user_id']
+    task = todos.find_one({"_id": ObjectId(id), "user_id": ObjectId(user_id)})  # Ensure the task belongs to the user
+    if task:
+        if task["done"] == "yes":
+            todos.update_one({"_id": ObjectId(id)}, {"$set": {"done": "no"}})
+        else:
+            todos.update_one({"_id": ObjectId(id)}, {"$set": {"done": "yes"}})
+    redir = redirect_url()
+    return redirect(redir)
 
 # @app.route("/action", methods=['POST'])
 # def action ():
@@ -149,19 +154,31 @@ def action():
     desc = request.values.get("desc")
     date = request.values.get("date")
     pr = request.values.get("pr")
+    user_id = session['user_id']  # Get the logged-in user's ID from the session
     try:
-        todos.insert_one({"name": name, "desc": desc, "date": date, "pr": pr, "done": "no"})
+        todos.insert_one({
+            "name": name, 
+            "desc": desc, 
+            "date": date, 
+            "pr": pr, 
+            "done": "no", 
+            "user_id": ObjectId(user_id)  # Store the user ID with the task
+        })
     except Exception as E:
-        print("here is the exception : ", E)
+        print("Exception:", E)
     return redirect("/list")
 
 @app.route("/remove")
 @login_required
-def remove ():
-	#Deleting a Task with various references
-	key=request.values.get("_id")
-	todos.remove({"_id":ObjectId(key)})
-	return redirect("/")
+def remove():
+    # Deleting a Task for the logged-in user
+    key = request.values.get("_id")
+    user_id = session['user_id']
+    try:
+        todos.delete_one({"_id": ObjectId(key), "user_id": ObjectId(user_id)})  # Ensure the task belongs to the user
+    except Exception as E:
+        print("Error:", E)
+    return redirect("/")
 
 @app.route("/update")
 @login_required
@@ -172,28 +189,57 @@ def update ():
 
 @app.route("/action3", methods=['POST'])
 @login_required
-def action3 ():
-	#Updating a Task with various references
-	name=request.values.get("name")
-	desc=request.values.get("desc")
-	date=request.values.get("date")
-	pr=request.values.get("pr")
-	id=request.values.get("_id")
-	todos.update({"_id":ObjectId(id)}, {'$set':{ "name":name, "desc":desc, "date":date, "pr":pr }})
-	return redirect("/")
+def action3():
+    # Updating a Task with various references
+    name = request.values.get("name")
+    desc = request.values.get("desc")
+    date = request.values.get("date")
+    pr = request.values.get("pr")
+    id = request.values.get("_id")
+    user_id = session['user_id']  # Get the logged-in user's ID from the session
+
+    # Ensure that the task being updated belongs to the logged-in user
+    task = todos.find_one({"_id": ObjectId(id), "user_id": ObjectId(user_id)})
+    
+    if task:
+        todos.update_one(
+            {"_id": ObjectId(id), "user_id": ObjectId(user_id)},
+            {'$set': {"name": name, "desc": desc, "date": date, "pr": pr}}
+        )
+        return redirect("/list")
+    else:
+        return jsonify({"error": "Task not found or you don't have permission to update it"}), 404
+
 
 @app.route("/search", methods=['GET'])
 @login_required
 def search():
-	#Searching a Task with various references
+    # Searching for a Task with various references
+    key = request.values.get("key")
+    print("key",key)
+    refer = request.values.get("refer")
+    print("refer",refer)
+    user_id = session['user_id']  # Get the logged-in user's ID from the session
+    print("user_id ",user_id)
 
-	key=request.values.get("key")
-	refer=request.values.get("refer")
-	if(key=="_id"):
-		todos_l = todos.find({refer:ObjectId(key)})
-	else:
-		todos_l = todos.find({refer:key})
-	return render_template('searchlist.html',todos=todos_l,t=title,h=heading)
+    # Build the query, ensuring it filters by user_id
+    query = {"user_id": ObjectId(user_id)}
+
+    if refer == "_id":
+        # If searching by _id, ensure it's a valid ObjectId
+        try:
+            query["_id"] = ObjectId(key)
+        except Exception:
+            return jsonify({"error": "Invalid ID format"}), 400
+    else:
+        # Otherwise, search by other field references
+        query[refer] = key
+
+    # Find the tasks that match the query and belong to the logged-in user
+    todos_l = todos.find(query)
+    
+    return render_template('searchlist.html', todos=todos_l, t=title, h=heading)
+
 
 if __name__ == "__main__":
     app.run()
